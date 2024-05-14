@@ -1,0 +1,24 @@
+.idea/
+.vscode/
+.DS_Store
+
+node_modules
+.env
+coverage
+coverage.json
+typechain
+typechain-types
+
+# Hardhat files
+cache
+artifacts
+
+# Foundry files
+out
+forge-cache
+
+# Typescript output
+build
+tsconfig.tsbuildinfo
+
+data

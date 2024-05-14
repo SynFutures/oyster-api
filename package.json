@@ -1,0 +1,28 @@
+{
+    "name": "root",
+    "private": true,
+    "workspaces": [
+        "packages/*"
+    ],
+    "engines": {
+        "npm": ">=7"
+    },
+    "scripts": {
+        "postinstall": "yarn build && yarn manuallyLink",
+        "prepare": "husky install",
+        "lint": "eslint packages/*/src/**.ts --fix",
+        "clean:build": "rm -rf packages/**/build && rm -rf packages/**/tsconfig.tsbuildinfo",
+        "clean": "rm -rf node_modules && rm -rf packages/**/node_modules && npm run clean:build",
+        "build": "yarn workspaces run build",
+        "test": "yarn workspaces run test",
+        "manuallyLink": "sh scripts/link.sh"
+    },
+    "devDependencies": {
+        "eslint": "^8.41.0",
+        "eslint-config-prettier": "^8.8.0",
+        "eslint-plugin-prettier": "^4.2.1",
+        "husky": "^8.0.3",
+        "prettier": "^2.8.7",
+        "typescript": "^5.4.5"
+    }
+}

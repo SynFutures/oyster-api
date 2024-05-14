@@ -1,0 +1,18 @@
+{
+    "name": "@synfutures/fx-core",
+    "version": "1.0.0",
+    "main": "build/index.js",
+    "description": "Framework core",
+    "engines": {
+        "node": ">=20.3.0"
+    },
+    "scripts": {
+        "build": "tsc --build tsconfig.json",
+        "test": "echo \"Error: no test specified\""
+    },
+    "author": "dev@synfutures.com",
+    "license": "MIT",
+    "dependencies": {
+        "@synfutures/logger": "^1.0.0"
+    }
+}

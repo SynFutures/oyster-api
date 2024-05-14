@@ -1,0 +1,28 @@
+{
+    "name": "@synfutures/base-plugins",
+    "version": "1.0.0",
+    "main": "build/index.js",
+    "description": "SynFutures V3 Base Plugins",
+    "scripts": {
+        "build": "tsc --build tsconfig.json",
+        "test": "echo \"Error: no test specified\""
+    },
+    "author": "dev@synfutures.com",
+    "license": "MIT",
+    "dependencies": {
+        "@synfutures/fx-core": "^1.0.0",
+        "@synfutures/logger": "^1.0.0",
+        "@synfutures/db": "^1.0.0",
+        "@synfutures/utils": "^1.0.0",
+        "@synfutures/oyster-sdk": "^0.1.5",
+        "lru-cache": "^10.0.0",
+        "moment": "^2.29.4",
+        "progress": "^2.0.3",
+        "semaphore-async-await": "^1.5.1",
+        "ws": "^8.13.0"
+    },
+    "devDependencies": {
+        "@types/progress": "^2.0.5",
+        "@types/ws": "^8.5.5"
+    }
+}

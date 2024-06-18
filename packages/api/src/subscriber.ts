@@ -4,6 +4,7 @@ import { FillEventObject } from '@synfutures/oyster-sdk/build/types/typechain/In
 import { Core, Plugin } from '@synfutures/fx-core';
 import { warn } from '@synfutures/logger';
 import { formatHexString } from '@synfutures/base-plugins';
+import { Subscription } from '@synfutures/db';
 
 const orderFilledQueue = 'order-filled';
 
@@ -20,6 +21,22 @@ export class Subscriber extends Plugin {
 
     constructor(core: Core, private config: SubscriberConfig) {
         super(core);
+    }
+
+    private get sdk() {
+        const common = this.core.getPlugin('Common');
+        if (!common) {
+            throw new Error('missing Common plugin');
+        }
+        return common.sdk;
+    }
+
+    private get db() {
+        const db = this.core.getPlugin('DB');
+        if (!db) {
+            throw new Error('missing DB plugin');
+        }
+        return db;
     }
 
     private send(queue: string, data: any) {
@@ -42,7 +59,7 @@ export class Subscriber extends Plugin {
         if (parsed.name === 'Fill') {
             const args = parsed.args as unknown as FillEventObject;
 
-            if (this.orderFilled.has(formatHexString(args.trader)) || true) {
+            if (this.orderFilled.has(formatHexString(args.trader))) {
                 this.send(orderFilledQueue, {
                     address: args.trader,
                     instrument: log.address,
@@ -59,15 +76,64 @@ export class Subscriber extends Plugin {
     /**
      * Subscribe order filled event
      * @param address User address
+     * @param persist Is persistence required?
      */
-    async subscribeOrderFilled(address: string) {
-        this.orderFilled.add(formatHexString(address));
+    async subscribeOrderFilled(address: string, persist = true) {
+        address = formatHexString(address);
+
+        if (persist) {
+            const exists = await Subscription.findOne({
+                where: {
+                    chainId: this.sdk.ctx.chainId,
+                    type: orderFilledQueue,
+                    data: { address },
+                },
+            });
+
+            if (!exists) {
+                await Subscription.create({
+                    chainId: this.sdk.ctx.chainId,
+                    type: orderFilledQueue,
+                    data: { address },
+                });
+            }
+        }
 
         if (!this.channels.has(orderFilledQueue)) {
             const channel = await this.connection.createChannel();
             await channel.assertQueue(orderFilledQueue);
 
             this.channels.set(orderFilledQueue, channel);
+        }
+
+        this.orderFilled.add(address);
+    }
+
+    /**
+     * Unsubscribe order filled event
+     * @param address User address
+     */
+    async unsubscribeOrderFilled(address: string) {
+        address = formatHexString(address);
+
+        await Subscription.destroy({
+            where: {
+                chainId: this.sdk.ctx.chainId,
+                type: orderFilledQueue,
+                data: { address },
+            },
+        });
+
+        this.orderFilled.delete(address);
+
+        if (this.orderFilled.size === 0) {
+            const channel = this.channels.get(orderFilledQueue);
+
+            if (channel) {
+                this.channels.delete(orderFilledQueue);
+
+                await channel.close();
+            }
         }
     }
 
@@ -76,6 +142,15 @@ export class Subscriber extends Plugin {
      */
     async onInit() {
         this.connection = await amqplib.connect(this.config.url);
+
+        await this.db.init();
+
+        // loading persistent information
+        for (const subscription of await Subscription.findAll({ where: { chainId: this.sdk.ctx.chainId } })) {
+            if (subscription.type === orderFilledQueue) {
+                await this.subscribeOrderFilled((subscription.data as any).address, false);
+            }
+        }
     }
 
     /**

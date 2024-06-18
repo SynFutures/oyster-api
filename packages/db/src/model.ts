@@ -229,4 +229,36 @@ export class Snapshot extends Model {
     snapshot: object;
 }
 
-export const models: ModelCtor[] = [EventIndex, Instrument, Snapshot];
+export class Subscription extends Model {
+    static initialize(sequelize: Sequelize) {
+        Subscription.init(
+            {
+                id: {
+                    type: DataTypes.INTEGER,
+                    primaryKey: true,
+                    autoIncrement: true,
+                },
+                chainId: {
+                    type: DataTypes.INTEGER,
+                    allowNull: false,
+                },
+                type: {
+                    type: DataTypes.TEXT,
+                    allowNull: false,
+                },
+                data: {
+                    type: DataTypes.JSON,
+                    allowNull: false,
+                },
+            },
+            { sequelize },
+        );
+    }
+
+    id: number;
+    chainId: number;
+    type: string;
+    data: object;
+}
+
+export const models: ModelCtor[] = [EventIndex, Instrument, Snapshot, Subscription];

@@ -583,10 +583,10 @@
     "@noble/hashes" "~1.3.2"
     "@scure/base" "~1.1.4"
 
-"@synfutures/oyster-sdk@^0.1.5":
-  version "0.1.5"
-  resolved "https://registry.yarnpkg.com/@synfutures/oyster-sdk/-/oyster-sdk-0.1.5.tgz#b199536639d9f6a0da82f4599c94fd0561f118e5"
-  integrity sha512-witLFuQWdcfpZ5lVgICa/m+vTwqx3TAn+W/D0IUfiQo2cZwAL+0IPr2ktE0Y8ft+3VIqe+/Tlb+xjh1nDEtvdw==
+"@synfutures/oyster-sdk@^0.1.8":
+  version "0.1.13"
+  resolved "https://registry.yarnpkg.com/@synfutures/oyster-sdk/-/oyster-sdk-0.1.13.tgz#33d20f53cea526fae70a318cfa69a0298381779f"
+  integrity sha512-SDiNQP+o7QFciN41ZjQrlesuyFxRc8rkuaoIRl4AYPEIIU7DKFUyHYtxHIWSrQRfdOkTx3F46dg5f9wk42UzZg==
   dependencies:
     "@derivation-tech/web3-core" "1.0.30"
     lodash "^4.17.21"

@@ -5,7 +5,7 @@ import { Core, Plugin } from '@synfutures/fx-core';
 import { error, info } from '@synfutures/logger';
 import { Channel, Tracker } from '@synfutures/utils';
 import { Cache, EventPosition, createCache, Snapshot as SnapshotTable } from '@synfutures/db';
-import { getSnapshot, saveSnapshot } from '../libs';
+import { getSnapshot, saveSnapshot } from '../libs/snapshots';
 
 type SnapshotConfig = {
     // the interval block number between two snapshots
@@ -28,7 +28,6 @@ const defaultCache: SnapshotCache = {
 export class Snapshots extends Plugin {
     private cache: Cache<SnapshotCache>;
 
-    private isReorging = false;
     private reorging?: Promise<void>;
     private working: Promise<void>;
 
@@ -69,6 +68,13 @@ export class Snapshots extends Plugin {
     }
 
     /**
+     * Get whether reorg is in progress
+     */
+    get isReorging() {
+        return !!this.reorging;
+    }
+
+    /**
      * Get current state
      */
     get state() {
@@ -103,6 +109,9 @@ export class Snapshots extends Plugin {
             try {
                 if (event.type === 'reorged') {
                     try {
+                        // clear pending logs
+                        this.channel.clear();
+
                         // clear latest snapshot
                         this.latestSnapshot = undefined;
                         this.latestPosition = undefined;
@@ -120,11 +129,11 @@ export class Snapshots extends Plugin {
                             },
                         });
 
-                        // generate new snapshot
+                        // generate a snapshot before the reorg occurs
                         const { snapshot, position } = await getSnapshot(
                             this.sdk,
                             this.events,
-                            this.events.latestBlockNumber,
+                            event.reorgBlockNumber - 1,
                             undefined,
                             undefined,
                             this.core.signal,
@@ -139,25 +148,37 @@ export class Snapshots extends Plugin {
                         event.resolve();
                     }
                 } else if (event.type === 'newParsedEvent') {
-                    if (
-                        this.latestPosition &&
-                        this.latestSnapshot &&
-                        (event.log.blockNumber > this.latestPosition.blockNumber ||
+                    if (this.latestPosition && this.latestSnapshot) {
+                        // NOTE: we monitor multiple instrument events at the same time,
+                        // so the order of execution may be mixed up.
+                        const messed =
+                            event.log.blockNumber < this.latestPosition.blockNumber ||
                             (event.log.blockNumber === this.latestPosition.blockNumber &&
-                                event.log.transactionIndex > this.latestPosition.transactionIndex) ||
+                                event.log.transactionIndex < this.latestPosition.transactionIndex) ||
                             (event.log.blockNumber === this.latestPosition.blockNumber &&
                                 event.log.transactionIndex === this.latestPosition.transactionIndex &&
-                                event.log.logIndex > this.latestPosition.logIndex))
-                    ) {
+                                event.log.logIndex < this.latestPosition.logIndex);
+
                         // process new log
                         await this.latestSnapshot.processParsedLog(event.log, event.parsedLog);
 
-                        // update latest position
-                        this.latestPosition = {
-                            blockNumber: event.log.blockNumber,
-                            transactionIndex: event.log.transactionIndex,
-                            logIndex: event.log.logIndex,
-                        };
+                        if (!messed) {
+                            // update latest position if not messed
+                            this.latestPosition = {
+                                blockNumber: event.log.blockNumber,
+                                transactionIndex: event.log.transactionIndex,
+                                logIndex: event.log.logIndex,
+                            };
+                        } else {
+                            // destroy messed snapshots
+                            await SnapshotTable.destroy({
+                                where: {
+                                    blockNumber: {
+                                        [Op.gte]: event.log.blockNumber,
+                                    },
+                                },
+                            });
+                        }
 
                         // save snapshot if threshold reached
                         if (event.log.blockNumber - this.cache.blockNumber >= this.config.interval) {
@@ -197,6 +218,14 @@ export class Snapshots extends Plugin {
                                     });
                                 }
 
+                                // save new snapshot
+                                await saveSnapshot(
+                                    this.sdk.ctx.chainId,
+                                    this.latestSnapshot,
+                                    this.latestPosition,
+                                    transaction,
+                                );
+
                                 // update cache
                                 this.cache.blockNumber = event.log.blockNumber;
                                 await this.cache.save(transaction);
@@ -226,27 +255,6 @@ export class Snapshots extends Plugin {
         }
     }
 
-    private onReorged = (reorgBlockNumber: number) => {
-        this.isReorging = true;
-
-        const reorging = new Promise<void>((resolve) =>
-            this.channel.push({
-                type: 'reorged',
-                reorgBlockNumber,
-                resolve,
-            }),
-        ).finally(() => {
-            if (this.reorging === reorging) {
-                // clear promise
-                this.reorging = undefined;
-
-                this.isReorging = false;
-            }
-        });
-
-        this.reorging = reorging;
-    };
-
     private onNewParsedEvent = (log: ethers.providers.Log, parsedLog: ethers.utils.LogDescription) => {
         this.channel.push({
             type: 'newParsedEvent',
@@ -254,6 +262,24 @@ export class Snapshots extends Plugin {
             parsedLog,
         });
     };
+
+    /**
+     * Reorg
+     * Delete the wrong snapshot and regenerate the correct snapshot
+     * @param reorgBlockNumber Reorged block number
+     */
+    reorg(reorgBlockNumber: number) {
+        return (this.reorging = new Promise<void>((resolve) =>
+            this.channel.push({
+                type: 'reorged',
+                reorgBlockNumber,
+                resolve,
+            }),
+        ).finally(() => {
+            // clear promise
+            this.reorging = undefined;
+        }));
+    }
 
     /**
      * Lifecycle function
@@ -297,7 +323,6 @@ export class Snapshots extends Plugin {
      * Lifecycle function
      */
     async onStart() {
-        this.core.nonBlocking.on('reorged', this.onReorged);
         this.core.nonBlocking.on('newParsedEvent', this.onNewParsedEvent);
 
         this.working = this.work();
@@ -307,13 +332,7 @@ export class Snapshots extends Plugin {
      * Lifecycle function
      */
     async onStop() {
-        // reorg event must be processed before stopping
-        while (this.reorging) {
-            await this.reorging;
-        }
-
         // remove event listeners
-        this.core.nonBlocking.off('reorged', this.onReorged);
         this.core.nonBlocking.off('newParsedEvent', this.onNewParsedEvent);
 
         this.channel.abort();

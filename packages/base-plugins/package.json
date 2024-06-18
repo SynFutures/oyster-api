@@ -14,7 +14,7 @@
         "@synfutures/logger": "^1.0.0",
         "@synfutures/db": "^1.0.0",
         "@synfutures/utils": "^1.0.0",
-        "@synfutures/oyster-sdk": "^0.1.5",
+        "@synfutures/oyster-sdk": "^0.1.8",
         "lru-cache": "^10.0.0",
         "moment": "^2.29.4",
         "progress": "^2.0.3",

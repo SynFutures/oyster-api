@@ -82,6 +82,10 @@ export class Reorg extends Plugin {
         return source;
     }
 
+    private get snapshots() {
+        return this.core.getPlugin('Snapshots');
+    }
+
     private get sdk() {
         return this.common.sdk;
     }
@@ -219,16 +223,17 @@ export class Reorg extends Plugin {
             }
         }
 
-        const needDestroy = Array.from(existed.values());
+        // NOTE: never destroy events
+        // const needDestroy = Array.from(existed.values());
 
-        for (const event of needDestroy) {
-            info('Reorg', 'destroy reorged event:', event.blockNumber, event.transactionIndex, event.logIndex);
+        // for (const event of needDestroy) {
+        //     info('Reorg', 'destroy reorged event:', event.blockNumber, event.transactionIndex, event.logIndex);
 
-            reorgedBlockNumber =
-                reorgedBlockNumber === undefined ? event.blockNumber : Math.min(reorgedBlockNumber, event.blockNumber);
-        }
+        //     reorgedBlockNumber =
+        //         reorgedBlockNumber === undefined ? event.blockNumber : Math.min(reorgedBlockNumber, event.blockNumber);
+        // }
 
-        return { needSave, needDestroy, reorgedBlockNumber };
+        return { needSave, needDestroy: [], reorgedBlockNumber };
     }
 
     private async checkEventsAndCommit(from: number, to: number) {
@@ -239,11 +244,26 @@ export class Reorg extends Plugin {
             const { needSave, needDestroy, reorgedBlockNumber } = await this.checkEvents(from, to);
 
             if (await this.commit(needSave, needDestroy)) {
-                // emit reorged event
                 if (reorgedBlockNumber) {
                     info('Reorg', 'reorged:', reorgedBlockNumber);
 
-                    await this.core.emit('reorged', reorgedBlockNumber);
+                    let resolve: (() => void) | undefined;
+
+                    try {
+                        // block storage coroutine, stop processing new events
+                        resolve = await this.storage.block();
+
+                        // regenerate snapshot
+                        await this.snapshots?.reorg(reorgedBlockNumber);
+
+                        // reprocess events
+                        await this.storage.reorg(reorgedBlockNumber);
+                    } finally {
+                        // resolve storage coroutine
+                        if (resolve) {
+                            resolve();
+                        }
+                    }
                 }
 
                 return;
@@ -286,13 +306,13 @@ export class Reorg extends Plugin {
         this.synced = true;
     };
 
-    private onNewBlock = (block: ethers.providers.Block) => {
+    private onNewStoredBlockNumber = (latestBlockNumber: number) => {
         if (!this.synced) {
             return;
         }
 
         if (!this.working) {
-            this.work(block.number);
+            this.work(latestBlockNumber);
         }
     };
 
@@ -324,7 +344,7 @@ export class Reorg extends Plugin {
      */
     async onStart() {
         this.core.nonBlocking.on('synced', this.onSynced);
-        this.core.nonBlocking.on('newBlock', this.onNewBlock);
+        this.core.nonBlocking.on('newStoredBlockNumber', this.onNewStoredBlockNumber);
     }
 
     /**
@@ -332,7 +352,7 @@ export class Reorg extends Plugin {
      */
     async onStop() {
         this.core.nonBlocking.off('synced', this.onSynced);
-        this.core.nonBlocking.off('newBlock', this.onNewBlock);
+        this.core.nonBlocking.off('newStoredBlockNumber', this.onNewStoredBlockNumber);
 
         // wait for job to complete
         await this.working;

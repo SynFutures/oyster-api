@@ -11,6 +11,7 @@ export type EventStructure = Readonly<{
     txHash: string;
     transactionIndex: number;
     logIndex: number;
+    status?: number;
     address: string;
     data: object;
 }>;
@@ -119,6 +120,14 @@ export class Events {
                 await this.syncModel(index);
             }
         })());
+    }
+
+    /**
+     * Sync indexes information
+     */
+    async sync() {
+        // load indexes to memory
+        this.indexes = await EventIndex.findAll({ where: { chainId: this.chainId }, order: [['id', 'ASC']] });
     }
 
     /**
@@ -336,7 +345,11 @@ export class Events {
      * @returns Instance or null
      */
     async findOne(condition: FindOptions<Attributes<Event>>, explicitBlockNumber?: number): Promise<Event | null> {
-        const blockNumber: number | undefined = (condition as any)?.where?.blockNumber ?? explicitBlockNumber;
+        let blockNumber: number | undefined = (condition as any)?.where?.blockNumber ?? explicitBlockNumber;
+
+        if (typeof blockNumber !== 'number') {
+            blockNumber = undefined;
+        }
 
         let previous = -1;
 

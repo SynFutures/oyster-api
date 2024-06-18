@@ -309,7 +309,7 @@ export class JSONRPCWebSocket extends EventEmitter {
      * @param timeOut Time out, default: 3s
      * @returns Response
      */
-    request(method: string, params: any[], timeOut = 3000) {
+    request(method: string, params: any, timeOut = 3000) {
         const id = this.genId();
         this.ws.send(
             JSON.stringify({

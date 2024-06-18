@@ -1,0 +1,21 @@
+{
+    "name": "@synfutures/oyster-api-client",
+    "version": "1.0.0",
+    "main": "build/index.js",
+    "description": "Oyster API client",
+    "scripts": {
+        "build": "tsc --build tsconfig.json",
+        "test": "echo \"Error: no test specified\""
+    },
+    "author": "dev@synfutures.com",
+    "license": "MIT",
+    "dependencies": {
+        "@synfutures/base-plugins": "^1.0.0",
+        "@synfutures/logger": "^1.0.0",
+        "@synfutures/oyster-sdk": "^0.1.13",
+        "amqplib": "^0.10.4"
+    },
+    "devDependencies": {
+        "@types/amqplib": "^0.10.5"
+    }
+}

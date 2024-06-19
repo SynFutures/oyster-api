@@ -3,17 +3,8 @@ import { CHAIN_ID } from '@derivation-tech/web3-core';
 import { Plugin, Core } from '@synfutures/fx-core';
 import { Instrument } from '@synfutures/db';
 import { error, info, debug, warn } from '@synfutures/logger';
-import { Channel, limitedMap, Tracker } from '@synfutures/utils';
-import {
-    WebSocket,
-    JSONRPCWebSocket,
-    LogSubscriber,
-    BlockNumberSubscriber,
-    LogFetcher,
-    compareLog,
-    formatHexString,
-    fetch,
-} from '../utils';
+import { Channel, limitedMap, Tracker, WebSocket, JSONRPCWebSocket } from '@synfutures/utils';
+import { LogSubscriber, BlockNumberSubscriber, LogFetcher, compareLog, formatHexString, fetch } from '../utils';
 import { gateInterface } from '../consts';
 
 type Log = ethers.providers.Log;

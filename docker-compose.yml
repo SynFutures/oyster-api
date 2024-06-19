@@ -8,8 +8,11 @@ services:
             # TODO: goerli, sepolia, blast-sepolia...
             BLAST_RPC: $BLAST_RPC
             BLAST_WSS: $BLAST_WSS
+            BASE_RPC: $BASE_RPC
+            BASE_WSS: $BASE_WSS
             API_NETWORK: $API_NETWORK
             API_DB_URL: postgres://postgres:let-me-in@postgres/api
+            AMQP_URL: amqp://rabbitmq:let-me-in@rabbitmq
         depends_on:
             postgres:
                 condition: service_healthy
@@ -29,3 +32,20 @@ services:
             interval: 10s
             timeout: 5s
             retries: 5
+    rabbitmq:
+        image: rabbitmq:3-management
+        restart: always
+        hostname: rabbitmq
+        volumes:
+            - ./data/rabbitmq:/var/lib/rabbitmq/mnesia/
+        environment:
+            - RABBITMQ_DEFAULT_USER=rabbitmq
+            - RABBITMQ_DEFAULT_PASS=let-me-in
+        ports:
+            - 5672:5672
+            - 15672:15672
+        healthcheck:
+            test: rabbitmq-diagnostics -q ping
+            interval: 30s
+            timeout: 30s
+            retries: 3

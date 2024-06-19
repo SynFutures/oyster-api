@@ -4,11 +4,18 @@ import { Transaction } from 'sequelize';
 import type { NewInstrumentEventObject } from '@synfutures/oyster-sdk/build/types/typechain/Gate';
 import { Tracker } from '@synfutures/utils';
 import { Core, Plugin } from '@synfutures/fx-core';
-import { Instrument as InstrumentTable, Cache, createCache } from '@synfutures/db';
+import { Instrument as InstrumentTable, Cache, createCache, EventStatus } from '@synfutures/db';
 import { warn, info, debug, error } from '@synfutures/logger';
 import type { ParsedLog } from '../types';
 import { gateInterface, instrumentInterface, configInterface, initialBlockNumbers } from '../consts';
-import { calcEventId, calcInstrumentId, formatNumber, formatHexString, serializeEventArgs } from '../utils';
+import {
+    calcEventId,
+    calcInstrumentId,
+    formatNumber,
+    formatHexString,
+    serializeEventArgs,
+    fromDBEvent,
+} from '../utils';
 
 type StorageConfig = {
     explicitlyFromBlockNumber?: number;
@@ -29,6 +36,12 @@ export class Storage extends Plugin {
     private initializing?: Promise<void>;
 
     private cache: Cache<StorageCache>;
+
+    private synced = false;
+
+    private processing = false;
+    private blocked?: () => void;
+    private blocking?: Promise<void>;
 
     constructor(core: Core, private config: StorageConfig) {
         super(core);
@@ -66,12 +79,43 @@ export class Storage extends Plugin {
         return this.cache.blockNumber;
     }
 
+    /**
+     * Block storage coroutine
+     */
+    block() {
+        if (this.stopped) {
+            return Promise.resolve(() => undefined);
+        }
+
+        if (this.blocked || this.blocking) {
+            throw new Error('invalid block');
+        }
+
+        let resolve!: () => void;
+
+        this.blocking = new Promise<void>((r) => (resolve = r)).finally(() => {
+            // clear
+            this.blocked = undefined;
+            this.blocking = undefined;
+        });
+
+        return this.processing
+            ? new Promise<void>((r) => (this.blocked = r)).then(() => resolve)
+            : Promise.resolve(resolve);
+    }
+
     async handleNewInstrumentEvent(
         id: string,
         log: ethers.providers.Log,
         parsed: ParsedLog<NewInstrumentEventObject>,
         transaction: Transaction,
+        processed: boolean,
     ) {
+        if (processed) {
+            // ignore processed log
+            return;
+        }
+
         // add new instrument to database
         await InstrumentTable.create(
             {
@@ -88,7 +132,9 @@ export class Storage extends Plugin {
         );
     }
 
-    private async processLogs(logs: ethers.providers.Log[]) {
+    private async processLogs(logs: ethers.providers.Log[], parsedLogs?: ethers.utils.LogDescription[]) {
+        const reprocessing = !!parsedLogs;
+
         const tracker = new Tracker();
 
         let transaction: Transaction;
@@ -106,7 +152,9 @@ export class Storage extends Plugin {
             // save latest block number
             let latest = this.cache.blockNumber;
 
-            for (const log of logs) {
+            for (let i = 0; i < logs.length; i++) {
+                const log = logs[i];
+
                 // calculate log id
                 const id = calcEventId(
                     this.sdk.ctx.chainId,
@@ -116,9 +164,12 @@ export class Storage extends Plugin {
                     log.logIndex,
                 );
 
-                // ignore duplicate logs
-                const event = await this.events.findOne({ where: { id, blockNumber: log.blockNumber }, transaction });
-                if (event !== null) {
+                const exists = await this.events.findOne({
+                    where: { id, blockNumber: log.blockNumber },
+                    transaction,
+                });
+                if (!reprocessing && exists) {
+                    // ignore duplicate logs
                     continue;
                 }
 
@@ -127,62 +178,103 @@ export class Storage extends Plugin {
                     latest = log.blockNumber;
                 }
 
-                let parsed: ethers.utils.LogDescription;
+                let parsed: ethers.utils.LogDescription | undefined = parsedLogs?.[i];
                 if (log.address.toLowerCase() === this.sdk.contracts.gate.address.toLowerCase()) {
-                    try {
-                        parsed = gateInterface.parseLog(log);
-                    } catch (err) {
-                        warn('Storage', 'unknown gate event, ignore');
-                        continue;
+                    if (!parsed) {
+                        try {
+                            parsed = gateInterface.parseLog(log);
+                        } catch (err) {
+                            warn('Storage', 'unknown gate event, ignore');
+                            continue;
+                        }
                     }
 
-                    debug('Storage', 'new gate event, name:', parsed.name, 'block number:', log.blockNumber);
+                    debug(
+                        'Storage',
+                        'new gate event, name:',
+                        parsed.name,
+                        'block number:',
+                        log.blockNumber,
+                        reprocessing ? '(reprocessing)' : '',
+                    );
                 } else if (log.address.toLowerCase() === this.sdk.contracts.config.address.toLowerCase()) {
-                    try {
-                        parsed = configInterface.parseLog(log);
-                    } catch (err) {
-                        warn('Storage', 'unknown config event, ignore');
-                        continue;
+                    if (!parsed) {
+                        try {
+                            parsed = configInterface.parseLog(log);
+                        } catch (err) {
+                            warn('Storage', 'unknown config event, ignore');
+                            continue;
+                        }
                     }
 
-                    debug('Storage', 'new config event, name:', parsed.name, 'block number:', log.blockNumber);
+                    debug(
+                        'Storage',
+                        'new config event, name:',
+                        parsed.name,
+                        'block number:',
+                        log.blockNumber,
+                        reprocessing ? '(reprocessing)' : '',
+                    );
                 } else {
-                    try {
-                        parsed = instrumentInterface.parseLog(log);
-                    } catch (err) {
-                        warn('Storage', 'unknown instrument event, ignore');
-                        continue;
+                    if (!parsed) {
+                        try {
+                            parsed = instrumentInterface.parseLog(log);
+                        } catch (err) {
+                            warn('Storage', 'unknown instrument event, ignore');
+                            continue;
+                        }
                     }
 
-                    debug('Storage', 'new instrument event, name:', parsed.name, 'block number:', log.blockNumber);
+                    debug(
+                        'Storage',
+                        'new instrument event, name:',
+                        parsed.name,
+                        'block number:',
+                        log.blockNumber,
+                        reprocessing ? '(reprocessing)' : '',
+                    );
                 }
+
+                const processed = !!(exists && (exists.status & EventStatus.PROCESSED) > 0);
 
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const handler = (this as any)['handle' + parsed.name + 'Event'];
                 if (handler) {
-                    await handler.call(this, id, log, parsed, transaction);
+                    await handler.call(this, id, log, parsed, transaction, processed);
                 }
 
-                // save log
-                await this.events.create(
-                    {
-                        id,
-                        chainId: this.sdk.ctx.chainId,
-                        name: parsed.name,
-                        blockNumber: formatNumber(log.blockNumber),
-                        blockHash: formatHexString(log.blockHash),
-                        txHash: formatHexString(log.transactionHash),
-                        transactionIndex: formatNumber(log.transactionIndex),
-                        logIndex: formatNumber(log.logIndex),
-                        address: formatHexString(log.address),
-                        data: serializeEventArgs(parsed.args),
-                    },
-                    { transaction },
-                );
+                if (exists) {
+                    // update log status if it has not been processed yet
+                    if (!processed) {
+                        exists.status += EventStatus.PROCESSED;
+
+                        await exists.save({ transaction });
+                    }
+                } else {
+                    // save log if not exists
+                    await this.events.create(
+                        {
+                            id,
+                            chainId: this.sdk.ctx.chainId,
+                            name: parsed.name,
+                            blockNumber: formatNumber(log.blockNumber),
+                            blockHash: formatHexString(log.blockHash),
+                            txHash: formatHexString(log.transactionHash),
+                            transactionIndex: formatNumber(log.transactionIndex),
+                            logIndex: formatNumber(log.logIndex),
+                            status: EventStatus.PROCESSED,
+                            address: formatHexString(log.address),
+                            data: serializeEventArgs(parsed.args),
+                        },
+                        { transaction },
+                    );
+                }
 
                 // send event
-                await this.core.emit('newParsedEvent', log, parsed);
+                await this.core.emit('newParsedEvent', log, parsed, processed);
             }
+
+            const updated = this.cache.blockNumber !== latest;
 
             // update latest block number
             this.cache.blockNumber = latest;
@@ -201,7 +293,13 @@ export class Storage extends Plugin {
                 tracker.totalUsage(),
                 'latest block number:',
                 this.cache.blockNumber,
+                reprocessing ? '(reprocessing)' : '',
             );
+
+            if (updated) {
+                // if the block number is updated, emit an event
+                await this.core.emit('newStoredBlockNumber', this.cache.blockNumber);
+            }
 
             return true;
         } catch (err) {
@@ -216,17 +314,59 @@ export class Storage extends Plugin {
         }
     }
 
-    private onNewEvent = async (logs: ethers.providers.Log[]) => {
-        for (let i = 0; i < logs.length && !this.stopped; i += 1000) {
-            const _logs = logs.slice(i, i + 1000);
+    private onNewEvent = async (logs: ethers.providers.Log | ethers.providers.Log[]) => {
+        try {
+            this.processing = true;
 
-            // this is quite important logic, so we need to retry until successful
-            while (!(await this.processLogs(_logs)) && !this.stopped) {
-                warn('Storage', 'retrying...');
-                await new Promise<void>((r) => setTimeout(r, 1000));
+            const _logs = Array.isArray(logs) ? logs : [logs];
+
+            for (let i = 0; i < _logs.length && !this.stopped; i += 1000) {
+                if (this.blocking) {
+                    // tell another coroutine that we are blocked
+                    this.blocked && this.blocked();
+                    // start blocking
+                    await this.blocking;
+                }
+
+                const logs = _logs.slice(i, i + 1000);
+
+                // this is quite important logic, so we need to retry until successful
+                while (!(await this.processLogs(logs)) && !this.stopped) {
+                    warn('Storage', 'retrying...');
+                    await new Promise<void>((r) => setTimeout(r, 1000));
+                }
             }
+        } finally {
+            this.processing = false;
         }
     };
+
+    private onSynced = async () => {
+        if (!this.synced) {
+            this.synced = true;
+        }
+    };
+
+    /**
+     * Reorg
+     * Reprocess any missing events
+     * @param reorgBlockNumber Reorged block number
+     */
+    async reorg(reorgBlockNumber: number) {
+        const tracker = new Tracker();
+
+        info('Storage', 'reorging at:', reorgBlockNumber);
+
+        for await (const events of this.events.findAllOrderByBTLASC(reorgBlockNumber - 1)) {
+            const _events = events.map(fromDBEvent);
+            await this.processLogs(
+                _events.map((e) => e.log),
+                _events.map((e) => e.parsedLog),
+            );
+        }
+
+        info('Storage', 'reorg usage:', tracker.usage());
+    }
 
     /**
      * Initialize
@@ -271,6 +411,7 @@ export class Storage extends Plugin {
      */
     async onStart() {
         this.core.blocking.on('newEvent', this.onNewEvent);
+        this.core.blocking.on('synced', this.onSynced);
     }
 
     /**
@@ -278,5 +419,6 @@ export class Storage extends Plugin {
      */
     async onStop() {
         this.core.blocking.off('newEvent', this.onNewEvent);
+        this.core.blocking.off('synced', this.onSynced);
     }
 }

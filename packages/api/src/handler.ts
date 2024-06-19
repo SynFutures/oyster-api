@@ -61,6 +61,14 @@ export class Handler extends Plugin {
         return common.events;
     }
 
+    private get subscriber() {
+        const subscriber = this.core.getPlugin('Subscriber');
+        if (!subscriber) {
+            throw new Error('missing Subscriber plugin');
+        }
+        return subscriber;
+    }
+
     private get snapshots() {
         const snapshots = this.core.getPlugin('Snapshots');
         if (!snapshots) {
@@ -361,6 +369,26 @@ export class Handler extends Plugin {
             insuranceFund: amm.insuranceFund.toString(),
             settlementPrice: amm.settlementPrice.toString(),
         };
+    }
+
+    async handleSubscribeOrderFilled(params: { address: string }) {
+        if (typeof params !== 'object' || typeof params.address !== 'string') {
+            throw new JSONRPCError(JSONRPCErrorCode.InvalidRequest, 'invalid params');
+        }
+
+        await this.subscriber.subscribeOrderFilled(params.address);
+
+        return true;
+    }
+
+    async handleUnsubscribeOrderFilled(params: { address: string }) {
+        if (typeof params !== 'object' || typeof params.address !== 'string') {
+            throw new JSONRPCError(JSONRPCErrorCode.InvalidRequest, 'invalid params');
+        }
+
+        await this.subscriber.unsubscribeOrderFilled(params.address);
+
+        return true;
     }
 
     private onReorged = (reorgBlockNumber: number) => {

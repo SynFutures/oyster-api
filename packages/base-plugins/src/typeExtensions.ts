@@ -12,7 +12,9 @@ declare module '@synfutures/fx-core' {
 
         newEvent: (logs: ethers.providers.Log[]) => void;
 
-        newParsedEvent: (log: ethers.providers.Log, parsed: ethers.utils.LogDescription) => void;
+        newParsedEvent: (log: ethers.providers.Log, parsed: ethers.utils.LogDescription, processed: boolean) => void;
+
+        newStoredBlockNumber: (blockNumber: number) => void;
     }
 
     interface Plugins {

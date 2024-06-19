@@ -7,6 +7,7 @@ import { error, info, LogLevel, setLogLevel } from '@synfutures/logger';
 import { plugins } from '@synfutures/base-plugins';
 import { Server } from './server';
 import { Handler } from './handler';
+import { Subscriber } from './subscriber';
 
 // eslint-disable-next-line @typescript-eslint/no-floating-promises
 yargs(hideBin(process.argv))
@@ -85,6 +86,11 @@ yargs(hideBin(process.argv))
                 throw new Error('missing database url');
             }
 
+            const amqpUrl = process.env['AMQP_URL'];
+            if (!amqpUrl) {
+                throw new Error('missing amqp url');
+            }
+
             // create plugins
             core.createPlugin(plugins.DB, { url: databaseUrl });
             core.createPlugin(plugins.Common, { network: args.network });
@@ -109,6 +115,7 @@ yargs(hideBin(process.argv))
             }
 
             core.createPlugin(Handler);
+            core.createPlugin(Subscriber, { url: amqpUrl });
             core.createPlugin(Server, {
                 port: args.port,
                 host: args.host,

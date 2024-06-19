@@ -10,9 +10,12 @@
     "author": "dev@synfutures.com",
     "license": "MIT",
     "dependencies": {
+        "@synfutures/logger": "^1.0.0",
+        "ws": "^8.13.0",
         "yallist": "^4.0.0"
     },
     "devDependencies": {
+        "@types/ws": "^8.5.5",
         "@types/yallist": "^4.0.1"
     }
 }

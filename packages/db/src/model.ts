@@ -1,6 +1,10 @@
 import { Model, DataTypes, Sequelize } from 'sequelize';
 import type { ModelCtor } from './types';
 
+export enum EventStatus {
+    PROCESSED = 0b1,
+}
+
 export declare class Event extends Model {
     id: string;
     chainId: number;
@@ -11,6 +15,7 @@ export declare class Event extends Model {
     txHash: string;
     transactionIndex: number;
     logIndex: number;
+    status: number;
     address: string;
     data: object;
 }
@@ -57,6 +62,11 @@ export function defineEvent(sequelize: Sequelize, name: string) {
                 type: DataTypes.INTEGER,
                 allowNull: false,
             },
+            status: {
+                type: DataTypes.INTEGER,
+                allowNull: false,
+                defaultValue: 0,
+            },
             address: {
                 type: DataTypes.TEXT,
                 allowNull: false,
@@ -78,7 +88,6 @@ export function defineEvent(sequelize: Sequelize, name: string) {
         },
     );
 }
-
 export class EventIndex extends Model {
     static initialize(sequelize: Sequelize) {
         EventIndex.init(
@@ -220,4 +229,36 @@ export class Snapshot extends Model {
     snapshot: object;
 }
 
-export const models: ModelCtor[] = [EventIndex, Instrument, Snapshot];
+export class Subscription extends Model {
+    static initialize(sequelize: Sequelize) {
+        Subscription.init(
+            {
+                id: {
+                    type: DataTypes.INTEGER,
+                    primaryKey: true,
+                    autoIncrement: true,
+                },
+                chainId: {
+                    type: DataTypes.INTEGER,
+                    allowNull: false,
+                },
+                type: {
+                    type: DataTypes.TEXT,
+                    allowNull: false,
+                },
+                data: {
+                    type: DataTypes.JSON,
+                    allowNull: false,
+                },
+            },
+            { sequelize },
+        );
+    }
+
+    id: number;
+    chainId: number;
+    type: string;
+    data: object;
+}
+
+export const models: ModelCtor[] = [EventIndex, Instrument, Snapshot, Subscription];

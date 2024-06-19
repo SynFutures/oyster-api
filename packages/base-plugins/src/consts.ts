@@ -7,4 +7,7 @@ export const instrumentInterface = Instrument__factory.createInterface();
 
 export const configInterface = Config__factory.createInterface();
 
-export const initialBlockNumbers = new Map<CHAIN_ID, number>([[CHAIN_ID.BLAST, 193838]]);
+export const initialBlockNumbers = new Map<CHAIN_ID, number>([
+    [CHAIN_ID.BLAST, 193838],
+    [CHAIN_ID.BASE, 15779365],
+]);

@@ -347,3 +347,69 @@ example:
     }
 }
 ```
+
+# Subscription
+
+-   [Subscribe Order Filled](./api.md#subscribe-order-filled)
+
+## Subscribe Order Filled
+
+### Request
+
+method: `subscribeOrderFilled`
+
+params:
+
+| name           | required | description  |
+| :------------- | :------- | :----------- |
+| params.address | ✅       | User address |
+
+example:
+
+```jsonc
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "subscribeOrderFilled",
+    "params": {
+        "address": "0x145d52ad11afb3c2201dca5d34977f1f9ee26644"
+    }
+}
+```
+
+### Response
+
+example:
+
+```jsonc
+{
+    "id": 1,
+    "result": true
+}
+```
+
+### Notification
+
+`RabbitMQ` notification
+
+params:
+
+| name       | description        |
+| :--------- | :----------------- |
+| address    | User address       |
+| instrument | Instrument address |
+| expiry     | Pair expiry        |
+| tick       | Order tick         |
+| nonce      | Order nonce        |
+
+example:
+
+```jsonc
+{
+    "address": "0x145d52ad11afb3c2201dca5d34977f1f9ee26644",
+    "instrument": "0x145d52ad11afb3c2201dca5d34977f1f9ee26644",
+    "expiry": 4294967295,
+    "tick": -81756,
+    "nonce": 12
+}
+```

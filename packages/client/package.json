@@ -11,9 +11,10 @@
     "license": "MIT",
     "dependencies": {
         "@synfutures/logger": "^1.0.0",
-        "@synfutures/utils": "^1.0.0",
         "@synfutures/oyster-sdk": "^0.1.13",
-        "amqplib": "^0.10.4"
+        "@synfutures/utils": "^1.0.0",
+        "amqplib": "^0.10.4",
+        "semaphore-async-await": "^1.5.1"
     },
     "devDependencies": {
         "@types/amqplib": "^0.10.5"

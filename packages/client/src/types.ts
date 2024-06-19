@@ -35,3 +35,11 @@ export interface SubscribeOrderFilledRequest {
 export interface UnsubscribeOrderFilledRequest {
     address: string;
 }
+
+export interface OrderFilledNotification {
+    address: string;
+    instrument: string;
+    expiry: number;
+    tick: number;
+    nonce: number;
+}

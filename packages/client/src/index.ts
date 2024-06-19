@@ -1,5 +1,7 @@
 import EventEmitter from 'events';
 import { ethers } from 'ethers';
+import amqplib from 'amqplib';
+import Semaphore from 'semaphore-async-await';
 import { parseOrderTickNonce } from '@synfutures/oyster-sdk';
 import { WebSocket, WebSocketConfig, JSONRPCWebSocket } from '@synfutures/utils';
 import {
@@ -7,31 +9,36 @@ import {
     QueryAccountResponse,
     SubscribeOrderFilledRequest,
     UnsubscribeOrderFilledRequest,
+    OrderFilledNotification,
 } from './types';
+
+export interface OysterClientConfig extends Omit<WebSocketConfig, 'url'> {
+    serverUrl: string;
+    amqpUrl: string;
+}
+
+const orderFilledQueue = 'order-filled';
+
+export interface OysterClient {
+    on(event: 'order-filled', listener: (msg: OrderFilledNotification, ack: () => void) => void): this;
+
+    off(event: 'order-filled', listener: (msg: OrderFilledNotification, ack: () => void) => void): this;
+
+    emit(event: 'order-filled', msg: OrderFilledNotification, ack: () => void): boolean;
+}
 
 export class OysterClient extends EventEmitter {
     private ws: WebSocket;
     private jsonrpc: JSONRPCWebSocket;
+    private connection: amqplib.Connection;
+    private channels = new Map<string, { channel: amqplib.Channel; size: number }>();
 
-    constructor(public url: string, config?: Partial<Exclude<WebSocketConfig, 'url'>>) {
+    private lock = new Semaphore(1);
+
+    constructor(private config: OysterClientConfig) {
         super();
-        this.ws = new WebSocket({ ...config, url });
+        this.ws = new WebSocket({ ...config, url: config.serverUrl });
         this.jsonrpc = new JSONRPCWebSocket(this.ws);
-    }
-
-    /**
-     * Start running
-     */
-    start() {
-        this.jsonrpc.start();
-    }
-
-    /**
-     * Stop running
-     * All in-progress requests will throw an error
-     */
-    stop() {
-        this.jsonrpc.stop();
     }
 
     /**
@@ -83,6 +90,39 @@ export class OysterClient extends EventEmitter {
         const request: SubscribeOrderFilledRequest = { address };
 
         await this.jsonrpc.request('subscribeOrderFilled', request, timeout);
+
+        await this.lock.acquire();
+
+        try {
+            const channelInfo = this.channels.get(orderFilledQueue);
+
+            if (!channelInfo) {
+                const channel = await this.connection.createChannel();
+
+                await channel.assertQueue(orderFilledQueue);
+
+                channel.consume(orderFilledQueue, (msg) => {
+                    if (msg === null) {
+                        // ignore canceled message
+                        return;
+                    }
+
+                    try {
+                        const data = JSON.parse(msg.content.toString());
+
+                        this.emit(orderFilledQueue, data, () => channel.ack(msg));
+                    } catch (err) {
+                        // ignore error
+                    }
+                });
+
+                this.channels.set(orderFilledQueue, { channel, size: 1 });
+            } else {
+                channelInfo.size += 1;
+            }
+        } finally {
+            this.lock.release();
+        }
     }
 
     /**
@@ -94,5 +134,47 @@ export class OysterClient extends EventEmitter {
         const request: UnsubscribeOrderFilledRequest = { address };
 
         await this.jsonrpc.request('unsubscribeOrderFilled', request, timeout);
+
+        await this.lock.acquire();
+
+        try {
+            const channelInfo = this.channels.get(orderFilledQueue);
+
+            if (channelInfo && --channelInfo.size === 0) {
+                this.channels.delete(orderFilledQueue);
+
+                await channelInfo.channel.close();
+            }
+        } finally {
+            this.lock.release();
+        }
+    }
+
+    /**
+     * Initialize the client
+     */
+    async init() {
+        this.connection = await amqplib.connect(this.config.amqpUrl);
+    }
+
+    /**
+     * Start running
+     */
+    async start() {
+        this.jsonrpc.start();
+    }
+
+    /**
+     * Stop running
+     * All in-progress requests will throw an error
+     */
+    async stop() {
+        this.jsonrpc.stop();
+
+        for (const { channel } of this.channels.values()) {
+            await channel.close();
+        }
+
+        await this.connection.close();
     }
 }

@@ -9,13 +9,13 @@ export interface WebSocketConfig {
     url: string;
 
     // reconnection will happen after the reconnection delay
-    reconnectDelay: number;
+    reconnectDelay?: number;
 
     // period for sending ping packets
-    keepAliveInterval: number;
+    keepAliveInterval?: number;
 
     // timeout for accepting pong packets
-    keepAliveTimeout: number;
+    keepAliveTimeout?: number;
 }
 
 const defaultConfig: Partial<WebSocketConfig> = {
@@ -28,7 +28,7 @@ const defaultConfig: Partial<WebSocketConfig> = {
  * Simple encapsulation of `ws`, implement keep alive and reconnection
  */
 export class WebSocket extends EventEmitter {
-    private config: WebSocketConfig;
+    private config: Required<WebSocketConfig>;
 
     private ws?: WS;
     private connected = false;
@@ -41,7 +41,7 @@ export class WebSocket extends EventEmitter {
         this.config = {
             ...defaultConfig,
             ...config,
-        } as WebSocketConfig;
+        } as Required<WebSocketConfig>;
     }
 
     private _reconnect() {

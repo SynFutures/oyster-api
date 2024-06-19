@@ -18,11 +18,9 @@
         "lru-cache": "^10.0.0",
         "moment": "^2.29.4",
         "progress": "^2.0.3",
-        "semaphore-async-await": "^1.5.1",
-        "ws": "^8.13.0"
+        "semaphore-async-await": "^1.5.1"
     },
     "devDependencies": {
-        "@types/progress": "^2.0.5",
-        "@types/ws": "^8.5.5"
+        "@types/progress": "^2.0.5"
     }
 }

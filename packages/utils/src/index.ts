@@ -4,3 +4,4 @@ export * from './jsonrpc';
 export * from './limited';
 export * from './tracker';
 export * from './utils';
+export * from './ws';

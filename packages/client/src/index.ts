@@ -1,8 +1,7 @@
 import EventEmitter from 'events';
 import { ethers } from 'ethers';
 import { parseOrderTickNonce } from '@synfutures/oyster-sdk';
-// TODO: elegantly import underlying components
-import { WebSocket, WebSocketConfig, JSONRPCWebSocket } from '@synfutures/base-plugins';
+import { WebSocket, WebSocketConfig, JSONRPCWebSocket } from '@synfutures/utils';
 import {
     QueryAccountRequest,
     QueryAccountResponse,
